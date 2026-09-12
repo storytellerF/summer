@@ -15,7 +15,7 @@ ksp = "2.3.9"
 room = "2.7.0"
 nav3Core = "1.0.1"
 lifecycleViewmodelNav3 = "2.10.0"
-easylauncher = "6.3.0"
+easylauncher = "6.4.1"
 datastore = "1.2.1"
 
 [libraries]
