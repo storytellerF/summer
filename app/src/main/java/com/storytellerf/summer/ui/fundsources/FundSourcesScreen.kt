@@ -23,6 +23,10 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.PrimaryTabRow
+import androidx.compose.material3.Tab
+import androidx.compose.material3.FilterChip
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -39,7 +43,11 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import kotlinx.coroutines.Dispatchers
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import com.storytellerf.summer.ui.components.EntryHeading
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -77,7 +85,8 @@ fun FundSourcesScreen(
     val recognitionViewModel: RecognitionSettingsViewModel = viewModel(
         factory = RecognitionSettingsViewModel.Factory(DataStoreRecognitionSettings(LocalContext.current.applicationContext)),
     )
-    val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val state by viewModel.uiState.collectAsStateWithLifecycle(context = Dispatchers.Main.immediate)
+    var selectedSection by rememberSaveable { mutableIntStateOf(0) }
     var showDialog by remember { mutableStateOf(false) }
     var editingFundSource by remember { mutableStateOf<FundSource?>(null) }
     var deletingFundSource by remember { mutableStateOf<FundSource?>(null) }
@@ -95,7 +104,7 @@ fun FundSourcesScreen(
             )
         },
         floatingActionButton = {
-            ExtendedFloatingActionButton(
+            if (selectedSection == 0) ExtendedFloatingActionButton(
                 onClick = {
                     editingFundSource = null
                     showDialog = true
@@ -105,6 +114,12 @@ fun FundSourcesScreen(
             )
         },
     ) { paddingValues ->
+        Column(Modifier.fillMaxSize().padding(paddingValues)) {
+            PrimaryTabRow(selectedTabIndex = selectedSection) {
+                listOf("Accounts", "Image recognition").forEachIndexed { index, label ->
+                    Tab(selected = selectedSection == index, onClick = { selectedSection = index }, text = { Text(label) })
+                }
+            }
         when (val s = state) {
             FundSourcesUiState.Loading -> {
                 Box(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
@@ -122,7 +137,8 @@ fun FundSourcesScreen(
                         showDialog = true
                     },
                     onDelete = { deletingFundSource = it },
-                    modifier = Modifier.padding(paddingValues),
+                    modifier = Modifier.weight(1f),
+                    showRecognition = selectedSection == 1,
                 )
             }
             is FundSourcesUiState.Error -> {
@@ -131,6 +147,7 @@ fun FundSourcesScreen(
                     modifier = Modifier.padding(paddingValues),
                 )
             }
+        }
         }
     }
 
@@ -154,7 +171,7 @@ fun FundSourcesScreen(
             onDismissRequest = { deletingFundSource = null },
             icon = { Icon(Icons.Default.Delete, contentDescription = null) },
             title = { Text("Delete ${fundSource.name}?") },
-            text = { Text("This source will be removed from your list. This action cannot be undone.") },
+            text = { Text("This deletes the account and all of its balance records and imported orders. This action cannot be undone.") },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -181,90 +198,36 @@ private fun FundSourcesContent(
     onEdit: (FundSource) -> Unit,
     onDelete: (FundSource) -> Unit,
     modifier: Modifier = Modifier,
+    showRecognition: Boolean,
 ) {
-    LazyColumn(
-        modifier = modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 20.dp, top = 12.dp, end = 20.dp, bottom = 104.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        item { RecognitionSettingsCard(recognitionViewModel) }
-        item {
-            LlmdTargetCard(
-                selectedTarget = selectedLlmdTarget,
-                onSelectTarget = onSelectLlmdTarget,
-            )
-        }
-        item {
-            Text(
-                text = "Fund sources",
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.padding(top = 8.dp),
-            )
-        }
-        if (fundSources.isEmpty()) {
-            item { EmptyFundSourcesCard() }
+    LazyColumn(modifier = modifier.fillMaxSize(),
+        contentPadding = PaddingValues(start = 20.dp, top = 20.dp, end = 20.dp, bottom = 104.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        if (showRecognition) {
+            item {
+                RecognitionSettingsCard(recognitionViewModel) {
+                    LlmdBuildSelector(selectedLlmdTarget, onSelectLlmdTarget)
+                }
+            }
         } else {
-            items(fundSources, key = { it.id }) { fundSource ->
-                FundSourceItem(
-                    fundSource = fundSource,
-                    onEdit = { onEdit(fundSource) },
-                    onDelete = { onDelete(fundSource) },
-                )
+            item { EntryHeading("Your accounts", "Keep balances and imported orders together by account.") }
+            if (fundSources.isEmpty()) item { EmptyFundSourcesCard() }
+            else items(fundSources, key = { it.id }) { source ->
+                FundSourceItem(source, onEdit = { onEdit(source) }, onDelete = { onDelete(source) })
             }
         }
     }
 }
 
 @Composable
-private fun LlmdTargetCard(
-    selectedTarget: LlmdTarget,
-    onSelectTarget: (LlmdTarget) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Card(
-        modifier = modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f),
-        ),
-    ) {
-        Column(modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp)) {
-            Text(
-                text = "LLMD build",
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.padding(horizontal = 16.dp),
-            )
-            Text(
-                text = "Choose which installed LLMD app handles image recognition.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-            )
+private fun LlmdBuildSelector(selectedTarget: LlmdTarget, onSelectTarget: (LlmdTarget) -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text("LLMD build", style = MaterialTheme.typography.labelLarge)
+        Text("Choose the LLMD app installed on this device.", style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             LlmdTarget.entries.forEach { target ->
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .selectable(
-                            selected = selectedTarget == target,
-                            onClick = { onSelectTarget(target) },
-                            role = Role.RadioButton,
-                        )
-                        .padding(horizontal = 12.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    RadioButton(
-                        selected = selectedTarget == target,
-                        onClick = null,
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Column {
-                        Text(target.displayName, style = MaterialTheme.typography.bodyLarge)
-                        Text(
-                            text = target.packageName,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
+                FilterChip(selected = selectedTarget == target, onClick = { onSelectTarget(target) }, label = { Text(target.displayName) })
             }
         }
     }

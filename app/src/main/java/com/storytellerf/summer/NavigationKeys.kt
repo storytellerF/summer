@@ -6,3 +6,5 @@ import kotlinx.serialization.Serializable
 @Serializable data object Main : NavKey
 @Serializable data object FundSources : NavKey
 @Serializable data object AddBalanceChange : NavKey
+
+@Serializable data object ImportTransactions : NavKey

@@ -19,8 +19,8 @@ import com.storytellerf.summer.data.db.entity.FundSource
 import com.storytellerf.summer.data.llmd.DataStoreLlmdTargetSettings
 import com.storytellerf.summer.data.recognition.DataStoreRecognitionSettings
 import com.storytellerf.summer.data.recognition.KoogConnection
-import com.storytellerf.summer.data.recognition.KoogBalanceRecognizer
-import com.storytellerf.summer.data.recognition.RemoteBalanceRecognizer
+import com.storytellerf.summer.data.recognition.KoogImageRecognizer
+import com.storytellerf.summer.data.recognition.RemoteImageRecognizer
 import com.storytellerf.summer.data.recognition.RecognitionBackend
 import com.storytellerf.summer.data.recognition.configuredImageAnalyzer
 import com.storytellerf.summer.theme.SummerAppTheme
@@ -50,7 +50,7 @@ class KoogOpenRouterLiveTest {
     @get:Rule val compose = createAndroidComposeRule<MainActivity>()
 
     @Test fun syntheticImage_withMockTransport_isRenderedAndSavedThroughKoog() {
-        val recognizer = KoogBalanceRecognizer {
+        val recognizer = KoogImageRecognizer {
             HttpClient(MockEngine { request ->
                 assertEquals("/api/v1/chat/completions", request.url.encodedPath)
                 assertTrue(request.body.toByteArray().decodeToString().contains("data:image/jpeg;base64,"))
@@ -79,7 +79,7 @@ class KoogOpenRouterLiveTest {
                 }
             }
             exerciseRecognition(KoogConnection("https://openrouter.ai/api/v1", credentials.getString("model"), credentials.getString("apiKey")),
-                KoogBalanceRecognizer(),
+                KoogImageRecognizer(),
                 inputImage = if (credentials.has("image")) File(context.noBackupFilesDir, credentials.getString("image")) else null,
                 expectedBalance = credentials.optDouble("expectedBalance", -245.70))
         } finally {
@@ -89,7 +89,7 @@ class KoogOpenRouterLiveTest {
 
     private fun exerciseRecognition(
         connection: KoogConnection,
-        recognizer: RemoteBalanceRecognizer,
+        recognizer: RemoteImageRecognizer,
         inputImage: File? = null,
         expectedBalance: Double = -245.70,
     ) {

@@ -13,7 +13,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.*
 import org.junit.Test
 
-class KoogBalanceRecognizerTest {
+class KoogImageRecognizerTest {
     @Test fun koogClients_sendInlineImageAndUseConfiguredApiPaths() = runTest {
         for ((backend, responses) in listOf(
             RecognitionBackend.OpenAI to false,
@@ -23,7 +23,7 @@ class KoogBalanceRecognizerTest {
             RecognitionBackend.Anthropic to false,
         )) {
             var requests = 0
-            val recognizer = KoogBalanceRecognizer {
+            val recognizer = KoogImageRecognizer {
                 HttpClient(MockEngine { request ->
                     requests++
                     val path = when {
@@ -59,7 +59,7 @@ class KoogBalanceRecognizerTest {
     }
 
     @Test fun authorizationError_isSanitizedAndClassified() = runTest {
-        val recognizer = KoogBalanceRecognizer {
+        val recognizer = KoogImageRecognizer {
             HttpClient(MockEngine {
                 respond("{\"error\":\"secret-provider-response\"}", HttpStatusCode.Unauthorized)
             })
@@ -81,6 +81,38 @@ class KoogBalanceRecognizerTest {
         }
         assertEquals(0.0, parseRemoteBalance("0"), 0.0)
         assertEquals(-1234.56, parseRemoteBalance(" -1234.56\n"), 0.0)
+    }
+
+    @Test fun transactionRecognition_sendsIdInstructions_andReadsSignedRecords() = runTest {
+        val content = """{"transactions":[{"timestamp":"2026-10-06T12:30:00","amount":-12.5,"note":"Shop","transactionId":"TX-001"}]}"""
+        val recognizer = KoogImageRecognizer {
+            HttpClient(MockEngine { request ->
+                val body = request.body.toByteArray().decodeToString()
+                assertTrue(body.contains("transactionId"))
+                assertTrue(body.contains("image"))
+                val response = kotlinx.serialization.json.buildJsonObject {
+                    put("id", kotlinx.serialization.json.JsonPrimitive("test"))
+                    put("object", kotlinx.serialization.json.JsonPrimitive("chat.completion"))
+                    put("created", kotlinx.serialization.json.JsonPrimitive(1))
+                    put("model", kotlinx.serialization.json.JsonPrimitive("test-vision"))
+                    put("choices", kotlinx.serialization.json.buildJsonArray {
+                        add(kotlinx.serialization.json.buildJsonObject {
+                            put("index", kotlinx.serialization.json.JsonPrimitive(0))
+                            put("message", kotlinx.serialization.json.buildJsonObject {
+                                put("role", kotlinx.serialization.json.JsonPrimitive("assistant"))
+                                put("content", kotlinx.serialization.json.JsonPrimitive(content))
+                            })
+                            put("finish_reason", kotlinx.serialization.json.JsonPrimitive("stop"))
+                        })
+                    })
+                }.toString()
+                respond(response, headers = headersOf("Content-Type", "application/json"))
+            })
+        }
+        val records = recognizer.recognizeTransactions(RecognitionBackend.OpenRouter,
+            KoogConnection("https://api.example.com/v1", "test-vision", "test-key"), byteArrayOf(1))
+        assertEquals(-12.5, records.single().amount, 0.0)
+        assertEquals("TX-001", records.single().transactionId)
     }
 
     companion object {

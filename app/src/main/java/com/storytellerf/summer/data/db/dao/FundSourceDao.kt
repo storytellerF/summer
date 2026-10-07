@@ -17,6 +17,9 @@ interface FundSourceDao {
     @Query("SELECT * FROM fund_sources WHERE id = :id")
     suspend fun getById(id: Long): FundSource?
 
+    @Query("SELECT * FROM fund_sources ORDER BY createdAt, name, id")
+    suspend fun getAllOnce(): List<FundSource>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(fundSource: FundSource): Long
 

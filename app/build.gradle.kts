@@ -3,6 +3,7 @@ plugins {
   alias(libs.plugins.compose.compiler)
   alias(libs.plugins.kotlin.serialization)
   alias(libs.plugins.ksp)
+  alias(libs.plugins.room)
   alias(libs.plugins.easylauncher)
 }
 
@@ -46,6 +47,10 @@ android {
     }
 
     buildTypes {
+        debug {
+            applicationIdSuffix = ".debug"
+            versionNameSuffix = "-debug"
+        }
         release {
             signingConfigs.findByName("release")?.let { signingConfig = it }
             isMinifyEnabled = false
@@ -94,6 +99,12 @@ kotlin {
     jvmToolchain(17)
 }
 
+room {
+    schemaDirectory("debug", "$projectDir/schemas/debug")
+    schemaDirectory("alpha", "$projectDir/schemas/alpha")
+    schemaDirectory("release", "$projectDir/schemas/release")
+}
+
 dependencies {
   val composeBom = platform(libs.androidx.compose.bom)
   implementation(composeBom)
@@ -105,8 +116,12 @@ dependencies {
   implementation(libs.koog.http.ktor)
   implementation(libs.ktor.client.okhttp)
 
+  implementation(libs.kotlinx.coroutines.core)
+  implementation(libs.kotlinx.coroutines.android)
+
   // Core Android dependencies
   implementation(libs.androidx.core.ktx)
+  implementation(libs.androidx.exifinterface)
   implementation(libs.androidx.lifecycle.runtime.ktx)
   implementation(libs.androidx.activity.compose)
 
@@ -137,11 +152,16 @@ dependencies {
   androidTestImplementation(libs.androidx.test.runner)
   androidTestImplementation(libs.androidx.test.espresso.core)
   androidTestImplementation(libs.ktor.client.mock)
+  androidTestImplementation(libs.kotlinx.coroutines.test)
 
   // Navigation
   implementation(libs.androidx.navigation3.ui)
   implementation(libs.androidx.navigation3.runtime)
   implementation(libs.androidx.lifecycle.viewmodel.navigation3)
+
+  implementation(libs.androidx.paging.common)
+  implementation(libs.androidx.paging.compose)
+  testImplementation(libs.androidx.paging.testing)
 
   // Room
   implementation(libs.androidx.room.runtime)

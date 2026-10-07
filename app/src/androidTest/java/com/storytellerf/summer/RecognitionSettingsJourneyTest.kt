@@ -32,6 +32,7 @@ class RecognitionSettingsJourneyTest {
         val previous = runBlocking(Dispatchers.IO) { settings.config.first() }
         try {
             compose.onNodeWithContentDescription("Settings").performClick()
+            compose.onNodeWithText("Image recognition").performClick()
             compose.waitUntil(10_000) {
                 compose.onAllNodes(hasText("Provider: ${previous.backend.displayName}") and isEnabled())
                     .fetchSemanticsNodes().isNotEmpty()
@@ -60,6 +61,7 @@ class RecognitionSettingsJourneyTest {
             compose.onNodeWithText("LLMD build").performScrollTo().assertIsDisplayed()
             compose.onNodeWithContentDescription("Back").performClick()
             compose.onNodeWithContentDescription("Settings").performClick()
+            compose.onNodeWithText("Image recognition").performClick()
             compose.onNodeWithText("Provider: LLMD").performScrollTo().assertIsDisplayed()
             compose.onNodeWithText("Provider: LLMD").performClick()
             compose.onNodeWithText("OpenRouter", useUnmergedTree = true).performClick()

@@ -10,6 +10,17 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class LlmdResponseFormatTest {
     @Test
+    fun transactionRequestRequiresOriginalTransactionId_andStrictSchema() {
+        val request = JSONObject(buildTransactionExtractionRequest("content://test/image.jpg"))
+        val schema = request.getJSONObject("response_format").getJSONObject("json_schema")
+        assertTrue(schema.getBoolean("strict"))
+        val row = schema.getJSONObject("schema").getJSONObject("properties")
+            .getJSONObject("transactions").getJSONObject("items")
+        assertTrue(row.getJSONArray("required").toString().contains("transactionId"))
+        assertTrue(row.getJSONObject("properties").has("transactionId"))
+    }
+
+    @Test
     fun requestUsesStrictBalanceJsonSchema() {
         val request = JSONObject(
             buildBalanceExtractionRequest("content://com.storytellerf.summer.llmd-images/test.jpg"),

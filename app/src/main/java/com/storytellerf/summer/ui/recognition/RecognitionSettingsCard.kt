@@ -16,6 +16,8 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import kotlinx.coroutines.Dispatchers
+import com.storytellerf.summer.ui.components.EntryMessage
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -31,14 +33,14 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.storytellerf.summer.data.recognition.RecognitionBackend
 
 @Composable
-fun RecognitionSettingsCard(viewModel: RecognitionSettingsViewModel) {
+fun RecognitionSettingsCard(viewModel: RecognitionSettingsViewModel, llmdOptions: @Composable () -> Unit = {}) {
     val host = viewModel.host
     val focus = LocalFocusManager.current
-    val state by host.uiState.collectAsStateWithLifecycle()
+    val state by host.uiState.collectAsStateWithLifecycle(context = Dispatchers.Main.immediate)
     var expanded by remember { mutableStateOf(false) }
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("Image recognition", style = MaterialTheme.typography.titleMedium)
+            Text("Recognition service", style = MaterialTheme.typography.titleLarge)
             OutlinedButton(onClick = { expanded = true }, enabled = !state.loading && !state.saving) {
                 Text("Provider: ${state.backend.displayName}")
                 DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
@@ -50,6 +52,11 @@ fun RecognitionSettingsCard(viewModel: RecognitionSettingsViewModel) {
                         })
                     }
                 }
+            }
+            if (state.backend == RecognitionBackend.Llmd) {
+                Text("Use an installed LLMD app to read balances and transactions.", style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                llmdOptions()
             }
             if (state.backend != RecognitionBackend.Llmd) {
                 Text("Images are sent to the selected API provider. Choose a model that supports image input.",
@@ -75,6 +82,7 @@ fun RecognitionSettingsCard(viewModel: RecognitionSettingsViewModel) {
                     }
                 }
             }
+            state.message?.let { EntryMessage(it) }
             Button(onClick = { focus.clearFocus(); host.save() }, enabled = !state.loading && !state.saving) {
                 Text(if (state.saving) "Saving recognition settings..." else "Save recognition settings")
             }
@@ -83,7 +91,6 @@ fun RecognitionSettingsCard(viewModel: RecognitionSettingsViewModel) {
                     Text("Remove saved connection")
                 }
             }
-            state.message?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
         }
     }
 }

@@ -2,84 +2,61 @@ package com.storytellerf.summer.ui.addbalance
 
 import android.app.Activity
 import android.content.Intent
-import android.net.Uri
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ColumnScope
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.Notes
-import androidx.compose.material.icons.filled.AccountBalanceWallet
-import androidx.compose.material.icons.filled.ImageSearch
-import androidx.compose.material.icons.filled.Save
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.storytellerf.summer.data.DefaultDataRepository
 import com.storytellerf.summer.data.db.SummerDatabase
-import com.storytellerf.summer.data.llmd.LlmdServiceConnection
-import com.storytellerf.summer.data.recognition.configuredImageAnalyzer
 import com.storytellerf.summer.data.llmd.DataStoreLlmdTargetSettings
+import com.storytellerf.summer.data.llmd.LlmdServiceConnection
+import com.storytellerf.summer.data.recognition.AndroidImageCreationTimeReader
+import com.storytellerf.summer.data.recognition.configuredImageAnalyzer
+import com.storytellerf.summer.ui.components.*
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AddBalanceChangeScreen(
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
+    onManageAccounts: () -> Unit = {},
     viewModel: AddBalanceChangeViewModel = viewModel(
         factory = AddBalanceChangeViewModel.Factory(
             DefaultDataRepository(SummerDatabase.getInstance(LocalContext.current.applicationContext)),
             configuredImageAnalyzer(LocalContext.current.applicationContext),
             DataStoreLlmdTargetSettings(LocalContext.current.applicationContext).selectedTarget,
+            imageCreationTimeReader = AndroidImageCreationTimeReader(LocalContext.current.applicationContext),
         )
     ),
 ) {
-    val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val state by viewModel.uiState.collectAsStateWithLifecycle(context = Dispatchers.Main.immediate)
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val currentOnBack by rememberUpdatedState(onBack)
+    var leavePreview by remember { mutableStateOf(false) }
+    val hasPreview = state.balanceRows.isNotEmpty()
+    BackHandler(enabled = hasPreview && !state.isSaving) { leavePreview = true }
+    BackHandler(enabled = state.isSaving) { }
+    val requestBack = { if (hasPreview) leavePreview = true else onBack() }
 
     val authorizationLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult(),
@@ -90,6 +67,7 @@ fun AddBalanceChangeScreen(
     LaunchedEffect(viewModel, lifecycleOwner) {
         lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
             viewModel.effects.collect { effect ->
+                withContext(Dispatchers.Main) {
                 when (effect) {
                     AddBalanceChangeEffect.Saved -> currentOnBack()
                     is AddBalanceChangeEffect.RequestAuthorization -> {
@@ -103,189 +81,116 @@ fun AddBalanceChangeScreen(
                         )
                     }
                 }
+                }
             }
         }
     }
 
     val imagePickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent(),
-    ) { uri: Uri? ->
-        uri?.let { viewModel.extractBalanceFromImage(it.toString()) }
+        contract = ActivityResultContracts.GetMultipleContents(),
+    ) { images ->
+        if (images.isNotEmpty()) viewModel.extractBalancesFromImages(images.map { it.toString() })
     }
 
+    val editable = !state.isSaving && !state.isImageAnalyzing
+    val reviewing = state.balanceRows.isNotEmpty()
+    val screenshots = state.entryMode == BalanceEntryMode.Screenshots
+    val focus = LocalFocusManager.current
+    var discardPreview by remember { mutableStateOf(false) }
     Scaffold(
         modifier = modifier,
-        topBar = {
-            TopAppBar(
-                title = { Text("Add Balance Change") },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                    }
+        topBar = { TopAppBar(title = { Text(if (reviewing) "Review balances" else "Record balance") }, navigationIcon = {
+            IconButton(onClick = requestBack, enabled = !state.isSaving) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
+        }) },
+        bottomBar = {
+            EntryAction(
+                label = when {
+                    state.isSaving -> "Saving..."
+                    state.isImageAnalyzing -> "Reading balances..."
+                    reviewing -> "Save selected balances"
+                    screenshots -> "Choose images"
+                    else -> "Save Balance Change"
+                },
+                enabled = editable && when {
+                    reviewing -> state.balanceRows.any { it.selected }
+                    screenshots -> state.imageTargets.isNotEmpty() && state.imageTargets.all { it.balanceToRead.isNotBlank() }
+                    else -> state.selectedFundSource != null && state.balance.isNotBlank()
+                },
+                busy = !editable,
+                summary = if (reviewing) "${state.balanceRows.count { it.selected }} balances will be saved together" else null,
+                onClick = {
+                    focus.clearFocus()
+                    if (screenshots && !reviewing) imagePickerLauncher.launch("image/*") else viewModel.saveBalanceChange()
                 },
             )
         },
-        bottomBar = {
-            Surface(
-                color = MaterialTheme.colorScheme.surface,
-                shadowElevation = 8.dp,
-            ) {
-                Button(
-                    onClick = viewModel::saveBalanceChange,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .navigationBarsPadding()
-                        .padding(horizontal = 20.dp, vertical = 12.dp)
-                        .height(52.dp),
-                    enabled = state.selectedFundSource != null &&
-                        state.balance.isNotBlank() &&
-                        !state.isImageAnalyzing &&
-                        !state.isSaving,
-                ) {
-                    Icon(Icons.Default.Save, contentDescription = null)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(if (state.isSaving) "Saving..." else "Save Balance Change")
-                }
-            }
-        },
-    ) { paddingValues ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
-                .padding(horizontal = 20.dp, vertical = 12.dp)
-                .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
-        ) {
-            Text("Record a snapshot", style = MaterialTheme.typography.headlineMedium)
-            Text(
-                "Choose an account and enter its latest balance.",
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-
-            FormSection(
-                icon = { Icon(Icons.Default.AccountBalanceWallet, contentDescription = null) },
-                title = "Fund Source",
-            ) {
-                if (state.fundSources.isEmpty()) {
-                    Text(
-                        "Add a fund source before recording a balance.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                } else {
-                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        items(state.fundSources) { fundSource ->
-                            FilterChip(
-                                selected = state.selectedFundSource?.id == fundSource.id,
-                                onClick = { viewModel.selectFundSource(fundSource) },
-                                label = { Text(fundSource.name) },
-                            )
+    ) { padding ->
+        if (reviewing) {
+            BalanceImportPreview(state, viewModel, Modifier.padding(padding), onChooseAgain = { discardPreview = true })
+        } else {
+            Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState())
+                .padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                    BalanceEntryMode.entries.forEachIndexed { index, mode ->
+                        SegmentedButton(selected = state.entryMode == mode, enabled = editable,
+                            onClick = { focus.clearFocus(); viewModel.selectEntryMode(mode) },
+                            shape = SegmentedButtonDefaults.itemShape(index, BalanceEntryMode.entries.size)) {
+                            Text(if (mode == BalanceEntryMode.Manual) "Manual" else "Screenshots")
                         }
                     }
                 }
-            }
-
-            FormSection(
-                icon = { Icon(Icons.Default.ImageSearch, contentDescription = null) },
-                title = "Balance",
-            ) {
-                OutlinedTextField(
-                    value = state.balance,
-                    onValueChange = { viewModel.updateBalance(it) },
-                    label = { Text("New Balance") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    prefix = { Text("¥") },
-                    supportingText = { Text("Enter a negative value if the account is overdrawn.") },
-                )
-
-                OutlinedButton(
-                    onClick = { imagePickerLauncher.launch("image/*") },
-                    modifier = Modifier.fillMaxWidth(),
-                    enabled = !state.isImageAnalyzing,
-                ) {
-                    if (state.isImageAnalyzing) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(20.dp),
-                            strokeWidth = 2.dp,
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Analyzing Image...")
-                    } else {
-                        Icon(Icons.Default.ImageSearch, contentDescription = null)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Import from Image")
+                if (state.fundSources.isEmpty()) {
+                    EntryMessage("Add an account before recording a balance.")
+                    TextButton(onClick = onManageAccounts) { Text("Manage accounts") }
+                }
+                if (screenshots) {
+                    ImportProgressStep(reviewing = false)
+                    EntryHeading("Which balances should we read?", "Select accounts, then choose up to 20 images. Each image can contain several balances.")
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        state.fundSources.forEach { source ->
+                            FilterChip(selected = state.imageTargets.any { it.fundSourceId == source.id }, enabled = editable,
+                                onClick = { viewModel.toggleImageTarget(source) }, label = { Text(source.name) })
+                        }
                     }
+                    state.imageTargets.forEach { target ->
+                        OutlinedTextField(value = target.balanceToRead,
+                            onValueChange = { viewModel.updateBalanceToRead(target.fundSourceId, it) },
+                            label = { Text("Balance to read for ${target.name}") },
+                            supportingText = { Text("For example: available cash or savings balance") },
+                            enabled = editable, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    }
+                    EntryMessage("Use image creation time when available; otherwise time defaults to now. Check the time for older images.")
+                } else {
+                    EntryHeading("Account balance", "Record the balance you see, including negative balances.")
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        state.fundSources.forEach { source ->
+                            FilterChip(selected = state.selectedFundSource?.id == source.id, enabled = editable,
+                                onClick = { viewModel.selectFundSource(source) }, label = { Text(source.name) })
+                        }
+                    }
+                    OutlinedTextField(value = state.balance, onValueChange = viewModel::updateBalance,
+                        label = { Text("New Balance") }, prefix = { Text("¥") }, singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        enabled = editable, modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(value = state.dateTime, onValueChange = viewModel::updateDateTime,
+                        label = { Text("Local date and time") }, supportingText = { Text("yyyy-MM-ddTHH:mm:ss · defaults to now") },
+                        singleLine = true, enabled = editable, modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(value = state.note, onValueChange = viewModel::updateNote,
+                        label = { Text("Note (Optional)") }, enabled = editable, modifier = Modifier.fillMaxWidth())
                 }
+                if (state.isImageAnalyzing) LinearProgressIndicator(Modifier.fillMaxWidth())
+                state.errorMessage?.let { EntryMessage(it, isError = true) }
             }
-
-            FormSection(
-                icon = { Icon(Icons.AutoMirrored.Filled.Notes, contentDescription = null) },
-                title = "Details",
-            ) {
-                OutlinedTextField(
-                    value = state.note,
-                    onValueChange = { viewModel.updateNote(it) },
-                    label = { Text("Note (Optional)") },
-                    modifier = Modifier.fillMaxWidth(),
-                    minLines = 2,
-                    maxLines = 3,
-                )
-            }
-
-            val errorMessage = state.errorMessage
-            if (errorMessage != null) {
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = MaterialTheme.shapes.medium,
-                    color = MaterialTheme.colorScheme.errorContainer,
-                    contentColor = MaterialTheme.colorScheme.onErrorContainer,
-                ) {
-                    Text(
-                        text = errorMessage,
-                        modifier = Modifier.padding(14.dp),
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(12.dp))
         }
     }
-}
-
-@Composable
-private fun FormSection(
-    icon: @Composable () -> Unit,
-    title: String,
-    content: @Composable ColumnScope.() -> Unit,
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.38f),
-        ),
-    ) {
-        Column(
-            modifier = Modifier.fillMaxWidth().padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                Surface(
-                    modifier = Modifier.size(36.dp),
-                    shape = MaterialTheme.shapes.small,
-                    color = MaterialTheme.colorScheme.secondaryContainer,
-                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                ) {
-                    Box(contentAlignment = androidx.compose.ui.Alignment.Center) { icon() }
-                }
-                Spacer(modifier = Modifier.width(10.dp))
-                Text(title, style = MaterialTheme.typography.titleMedium)
-            }
-            content()
-        }
+    if (discardPreview) {
+        AlertDialog(onDismissRequest = { discardPreview = false }, title = { Text("Choose different images?") },
+            text = { Text("This clears the unsaved preview. Your selected accounts and balance labels stay available.") },
+            confirmButton = { TextButton(onClick = { discardPreview = false; viewModel.clearBalancePreview() }) { Text("Choose again") } },
+            dismissButton = { TextButton(onClick = { discardPreview = false }) { Text("Keep reviewing") } })
     }
+    if (leavePreview) ConfirmLeavePreview(onStay = { leavePreview = false }, onLeave = {
+        leavePreview = false; onBack()
+    })
+
 }

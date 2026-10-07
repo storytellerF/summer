@@ -1,38 +1,33 @@
 package com.storytellerf.summer.ui.feed
 
+import androidx.paging.Pager
+import androidx.paging.PagingConfig
+import androidx.paging.PagingData
+import androidx.paging.cachedIn
 import com.storytellerf.summer.data.DataRepository
 import com.storytellerf.summer.ui.host.AppDispatchers
-import com.storytellerf.summer.ui.host.withDispatcher
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.flow.SharingStarted
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.catch
-import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOn
-import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
 
-class FeedHost(
-    repository: DataRepository,
-    scope: CoroutineScope,
-    dispatchers: AppDispatchers,
-) {
-    val uiState: StateFlow<FeedUiState> = combine(
-        repository.getAllBalanceChanges(),
-        repository.getAllFundSources(),
-    ) { balanceChanges, fundSources ->
-        FeedUiState.Success(buildBalanceTimeline(balanceChanges, fundSources)) as FeedUiState
+class FeedHost(repository: DataRepository, scope: CoroutineScope, dispatchers: AppDispatchers) : AutoCloseable {
+    private val hostScope = CoroutineScope(scope.coroutineContext + SupervisorJob(scope.coroutineContext[Job]) + dispatchers.coordination)
+    // Source creation and invalidation share the serial coordination dispatcher.
+    private var activeSource: FeedPagingSource? = null
+    private val pager = Pager(PagingConfig(pageSize = 20, initialLoadSize = 20, enablePlaceholders = false)) {
+        FeedPagingSource(repository, dispatchers).also { activeSource = it }
     }
-        .flowOn(dispatchers.default)
-        .catch { emit(FeedUiState.Error(it.message ?: "Unknown error")) }
-        .stateIn(
-            scope = scope.withDispatcher(dispatchers.default),
-            started = SharingStarted.WhileSubscribed(5_000),
-            initialValue = FeedUiState.Loading,
-        )
-}
+    val items: Flow<PagingData<TimelineItem>> = pager.flow.flowOn(dispatchers.coordination).cachedIn(hostScope)
 
-sealed interface FeedUiState {
-    data object Loading : FeedUiState
-    data class Error(val message: String) : FeedUiState
-    data class Success(val snapshots: List<BalanceSnapshot>) : FeedUiState
+    init {
+        hostScope.launch {
+            repository.observeTimelineChanges().collect { activeSource?.invalidate() }
+        }
+    }
+
+    override fun close() = hostScope.cancel()
 }

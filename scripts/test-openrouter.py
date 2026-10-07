@@ -10,7 +10,7 @@ import subprocess
 import urllib.request
 
 PROJECT = Path(__file__).resolve().parents[1]
-APP = "com.storytellerf.summer"
+APP = "com.storytellerf.summer.debug"
 
 
 def run(command, **kwargs):
