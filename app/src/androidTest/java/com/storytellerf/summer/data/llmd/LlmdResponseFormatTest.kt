@@ -9,45 +9,37 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class LlmdResponseFormatTest {
-    @Test
-    fun requestUsesStrictBalanceJsonSchema() {
-        val request = JSONObject(
-            buildBalanceExtractionRequest("content://com.storytellerf.summer.llmd-images/test.jpg"),
-        )
-        val responseFormat = request.getJSONObject("response_format")
-        val jsonSchema = responseFormat.getJSONObject("json_schema")
-        val schema = jsonSchema.getJSONObject("schema")
+    @Test fun multiBalanceRequestUsesSelectedAccountsAndVariantImageUri() {
+        val uri = "content://com.storytellerf.summer.debug.llmd-images/image.jpg"
+        val request = JSONObject(buildBalancesExtractionRequest(uri, listOf(
+            com.storytellerf.summer.data.recognition.BalanceReadTarget(7, "Wallet", "Available balance", "USD")), "selected-model"))
+        val content = request.getJSONArray("messages").getJSONObject(0).getJSONArray("content")
+        assertEquals(uri, content.getJSONObject(1).getJSONObject("image_url").getString("url"))
+        assertTrue(content.getJSONObject(0).getString("text").contains("Available balance"))
+        assertTrue(content.getJSONObject(0).getString("text").contains("USD"))
+        assertEquals("selected-model", request.getString("model"))
+        assertEquals("text", request.getJSONObject("response_format").getString("type"))
+        assertTrue(content.getJSONObject(0).getString("text").contains("fundSourceId"))
+    }
 
-        assertEquals("json_schema", responseFormat.getString("type"))
-        assertEquals("balance_extraction", jsonSchema.getString("name"))
-        assertTrue(jsonSchema.getBoolean("strict"))
-        assertEquals("number", schema.getString("type"))
-        assertEquals(
-            "content://com.storytellerf.summer.llmd-images/test.jpg",
-            request.getJSONArray("messages")
-                .getJSONObject(0)
-                .getJSONArray("content")
-                .getJSONObject(1)
-                .getJSONObject("image_url")
-                .getString("url"),
-        )
+    @Test fun serviceErrorsRemainActionable_andAuthorizationStillRequestsConsent() {
+        val error = runCatching { extractResponseContent(
+            """{"error":{"type":"llmd_error","message":"LiteRT-LM engine is not ready"}}""") }.exceptionOrNull()
+        assertTrue(error is LlmdRecognitionException)
+        assertTrue(error!!.message!!.contains("engine is unavailable"))
+        assertTrue(runCatching { extractResponseContent(
+            """{"error":{"type":"authorization_required"}}""") }.exceptionOrNull() is LlmdAuthorizationException)
     }
 
     @Test
-    fun responseReadsStructuredNegativeBalance() {
-        val result = parseBalanceFromResponse(
-            """{"choices":[{"message":{"content":"-1234.56"}}]}""",
-        )
-
-        assertEquals(-1234.56, result.getOrThrow(), 0.0)
+    fun transactionRequestRequestsOriginalTransactionId_withoutGuidedGeneration() {
+        val request = JSONObject(buildTransactionExtractionRequest("content://test/image.jpg", "selected-model", "EUR"))
+        assertTrue(request.getJSONArray("messages").getJSONObject(0).getJSONArray("content")
+            .getJSONObject(0).getString("text").contains("selected account currency is EUR"))
+        assertEquals("selected-model", request.getString("model"))
+        assertEquals("text", request.getJSONObject("response_format").getString("type"))
+        assertTrue(request.getJSONArray("messages").getJSONObject(0).getJSONArray("content")
+            .getJSONObject(0).getString("text").contains("transactionId"))
     }
 
-    @Test
-    fun responseRejectsUnstructuredContent() {
-        val result = parseBalanceFromResponse(
-            """{"choices":[{"message":{"content":"balance is 1234.56"}}]}""",
-        )
-
-        assertTrue(result.isFailure)
-    }
 }

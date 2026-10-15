@@ -5,14 +5,20 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.storytellerf.summer.data.DataRepository
 import com.storytellerf.summer.ui.host.AppDispatchers
-import kotlinx.coroutines.flow.StateFlow
+import androidx.paging.PagingData
+import kotlinx.coroutines.flow.Flow
 
 class FeedViewModel(
     repository: DataRepository,
     dispatchers: AppDispatchers = AppDispatchers.Runtime,
 ) : ViewModel() {
     private val host = FeedHost(repository, viewModelScope, dispatchers)
-    val uiState: StateFlow<FeedUiState> = host.uiState
+    val items: Flow<PagingData<TimelineItem>> = host.items
+
+    override fun onCleared() {
+        host.close()
+        super.onCleared()
+    }
 
     class Factory(private val repository: DataRepository) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")

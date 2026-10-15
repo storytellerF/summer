@@ -17,12 +17,16 @@ import com.storytellerf.summer.data.DefaultDataRepository
 import com.storytellerf.summer.data.db.SummerDatabase
 import com.storytellerf.summer.data.db.entity.FundSource
 import com.storytellerf.summer.data.llmd.DataStoreLlmdTargetSettings
+import com.storytellerf.summer.data.llmd.LlmdTarget
 import com.storytellerf.summer.data.recognition.DataStoreRecognitionSettings
 import com.storytellerf.summer.data.recognition.KoogConnection
-import com.storytellerf.summer.data.recognition.KoogBalanceRecognizer
-import com.storytellerf.summer.data.recognition.RemoteBalanceRecognizer
+import com.storytellerf.summer.data.recognition.KoogImageRecognizer
+import com.storytellerf.summer.data.recognition.RemoteImageRecognizer
 import com.storytellerf.summer.data.recognition.RecognitionBackend
 import com.storytellerf.summer.data.recognition.configuredImageAnalyzer
+import com.storytellerf.summer.data.recognition.FinanceImageAnalyzer
+import com.storytellerf.summer.data.recognition.BalanceReadTarget
+import com.storytellerf.summer.data.recognition.InvalidBalancesResponseException
 import com.storytellerf.summer.theme.SummerAppTheme
 import com.storytellerf.summer.ui.addbalance.AddBalanceChangeScreen
 import com.storytellerf.summer.ui.addbalance.AddBalanceChangeViewModel
@@ -33,11 +37,11 @@ import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
 import io.ktor.client.engine.mock.toByteArray
 import io.ktor.http.headersOf
-import io.ktor.client.engine.okhttp.OkHttp
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
 import org.json.JSONObject
 import org.junit.Assert.*
@@ -46,42 +50,53 @@ import org.junit.Rule
 import org.junit.Test
 
 /** Opt-in: the runner provisions a key in app-private storage, never as an instrumentation argument. */
-class KoogOpenRouterLiveTest {
+class LiveRecognitionJourneyTest {
     @get:Rule val compose = createAndroidComposeRule<MainActivity>()
 
     @Test fun syntheticImage_withMockTransport_isRenderedAndSavedThroughKoog() {
-        val recognizer = KoogBalanceRecognizer {
+        val recognizer = KoogImageRecognizer {
             HttpClient(MockEngine { request ->
                 assertEquals("/api/v1/chat/completions", request.url.encodedPath)
                 assertTrue(request.body.toByteArray().decodeToString().contains("data:image/jpeg;base64,"))
-                respond("""{"id":"test","model":"test-vision","choices":[{"message":{"role":"assistant","content":"-245.70"},"finish_reason":"stop"}]}""",
-                    headers = headersOf("Content-Type", "application/json"))
+                val requestJson = JSONObject(request.body.toByteArray().decodeToString())
+                assertTrue(requestJson.getJSONObject("response_format").getJSONObject("json_schema").getBoolean("strict"))
+                val response = JSONObject("""{"id":"test","model":"test-vision","choices":[{"message":{"role":"assistant"},"finish_reason":"stop"}]}""")
+                response.getJSONArray("choices").getJSONObject(0).getJSONObject("message").put("content",
+                    """{"balances":[{"fundSourceId":null,"balance":-245.70,"label":"balance","currency":"CNY"}]}""")
+                respond(response.toString(), headers = headersOf("Content-Type", "application/json"))
             })
         }
         exerciseRecognition(KoogConnection("https://api.example.com/api/v1", "test-vision", "instrumentation-placeholder-key"), recognizer)
     }
 
-    @Test fun screenshotBalance_isRecognizedByKoogAndSavedFromTheForm() {
+    @Test fun screenshotBalance_isRecognizedAndSavedFromTheForm() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val credentialFile = File(context.noBackupFilesDir, "koog-live-test.json")
         assumeTrue("Provision OPENROUTER_API_KEY with scripts/test-openrouter.py to run the live test", credentialFile.isFile)
         val credentials = runBlocking(Dispatchers.IO) { JSONObject(credentialFile.readText()) }
+        val llmdTarget = when (credentials.optString("llmd")) {
+            "debug" -> LlmdTarget.Debug
+            "alpha" -> LlmdTarget.Alpha
+            "release" -> LlmdTarget.Release
+            else -> null
+        }
         try {
-            runBlocking(Dispatchers.IO) {
-                val client = HttpClient(OkHttp)
+            if (llmdTarget == null) runBlocking(Dispatchers.IO) {
+                val client = liveRecognitionTransport()
                 try {
                     val response = client.get("https://openrouter.ai/api/v1/key") {
                         header("Authorization", "Bearer ${credentials.getString("apiKey")}")
                     }
-                    assertEquals("The API key must authenticate from the emulator", 200, response.status.value)
+                    assertEquals("The API key must authenticate from the device", 200, response.status.value)
                 } finally {
                     client.close()
                 }
             }
-            exerciseRecognition(KoogConnection("https://openrouter.ai/api/v1", credentials.getString("model"), credentials.getString("apiKey")),
-                KoogBalanceRecognizer(),
+            exerciseRecognition(if (llmdTarget != null) KoogConnection() else KoogConnection("https://openrouter.ai/api/v1", credentials.getString("model"), credentials.getString("apiKey")),
+                KoogImageRecognizer(::liveRecognitionTransport),
                 inputImage = if (credentials.has("image")) File(context.noBackupFilesDir, credentials.getString("image")) else null,
-                expectedBalance = credentials.optDouble("expectedBalance", -245.70))
+                expectedBalance = credentials.optDouble("expectedBalance", -245.70),
+                currency = credentials.optString("currency", "CNY"), llmdTarget = llmdTarget)
         } finally {
             credentialFile.delete()
         }
@@ -89,9 +104,11 @@ class KoogOpenRouterLiveTest {
 
     private fun exerciseRecognition(
         connection: KoogConnection,
-        recognizer: RemoteBalanceRecognizer,
+        recognizer: RemoteImageRecognizer,
         inputImage: File? = null,
         expectedBalance: Double = -245.70,
+        currency: String = "CNY",
+        llmdTarget: LlmdTarget? = null,
     ) {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val settings = DataStoreRecognitionSettings(context)
@@ -99,35 +116,52 @@ class KoogOpenRouterLiveTest {
         val database = SummerDatabase.getInstance(context)
         val image = inputImage ?: File(context.cacheDir, "synthetic-balance.png")
         val sourceId = runBlocking(Dispatchers.IO) {
-            database.fundSourceDao().insert(FundSource(name = "Koog test wallet"))
+            database.fundSourceDao().insert(FundSource(name = "Wallet", currency = requireNotNull(com.storytellerf.summer.data.currencyCode(currency))))
         }
         try {
             runBlocking(Dispatchers.IO) {
-                settings.save(RecognitionBackend.OpenRouter, connection)
+                settings.save(if (llmdTarget == null) RecognitionBackend.OpenRouter else RecognitionBackend.Llmd, connection)
                 if (inputImage == null) createSyntheticScreenshot(image)
             }
             lateinit var viewModel: AddBalanceChangeViewModel
+            val configured = configuredImageAnalyzer(context, remote = recognizer)
+            val analyzer = object : FinanceImageAnalyzer {
+                override suspend fun extractBalancesFromImage(imageReference: String, targets: List<BalanceReadTarget>, target: LlmdTarget) =
+                    configured.extractBalancesFromImage(imageReference, targets, target).also { result ->
+                        result.exceptionOrNull()?.let { error ->
+                            android.util.Log.w("BalanceScreenshotTest", "failure=${error.javaClass.simpleName} parser=${(error as? InvalidBalancesResponseException)?.failureType}")
+                        }
+                    }
+                override fun close() = configured.close()
+            }
             compose.runOnUiThread {
                 viewModel = ViewModelProvider(compose.activity, AddBalanceChangeViewModel.Factory(
-                    DefaultDataRepository(database), configuredImageAnalyzer(context, remote = recognizer), DataStoreLlmdTargetSettings(context).selectedTarget,
+                    DefaultDataRepository(database), analyzer,
+                    llmdTarget?.let { flowOf(it) } ?: DataStoreLlmdTargetSettings(context).selectedTarget,
                 ))[AddBalanceChangeViewModel::class.java]
                 compose.activity.setContent {
                     SummerAppTheme { AddBalanceChangeScreen(onBack = {}, viewModel = viewModel) }
                 }
             }
             compose.waitUntil(10_000) {
-                compose.onAllNodesWithText("Koog test wallet").fetchSemanticsNodes().isNotEmpty()
+                compose.onAllNodesWithText("Wallet").fetchSemanticsNodes().isNotEmpty()
             }
-            compose.onNodeWithText("Koog test wallet").performScrollTo().performClick()
-            // Feed the synthetic image into the same action used by the system image picker.
-            viewModel.extractBalanceFromImage(image.toURI().toString())
+            val source = runBlocking(Dispatchers.IO) { database.fundSourceDao().getById(sourceId)!! }
+            compose.runOnIdle {
+                viewModel.selectFundSource(source)
+                viewModel.selectEntryMode(com.storytellerf.summer.ui.addbalance.BalanceEntryMode.Screenshots)
+                viewModel.extractBalancesFromImages(listOf(image.toURI().toString()))
+            }
             compose.waitUntil(120_000) {
-                viewModel.uiState.value.balance.isNotBlank() || viewModel.uiState.value.errorMessage != null
+                viewModel.uiState.value.balanceRows.isNotEmpty() || viewModel.uiState.value.errorMessage != null
             }
             assertNull("Live recognition should succeed: ${viewModel.uiState.value.errorMessage}", viewModel.uiState.value.errorMessage)
-            compose.onNodeWithText("New Balance").performScrollTo().assertTextContains(String.format(Locale.ROOT, "%.2f", expectedBalance))
-            compose.onNodeWithText("Save Balance Change").performClick()
-            compose.waitUntil(10_000) { viewModel.uiState.value.balance.isEmpty() }
+            val row = viewModel.uiState.value.balanceRows.single()
+            assertEquals(expectedBalance, row.balance.toDouble(), 0.0)
+            compose.runOnIdle { viewModel.updateBalanceRow(row.key, row.copy(fundSourceId = sourceId)) }
+            compose.waitUntil(10_000) { viewModel.uiState.value.balanceRows.single().fundSourceId == sourceId }
+            compose.runOnIdle { viewModel.saveBalanceChange() }
+            compose.waitUntil(10_000) { viewModel.uiState.value.balanceRows.isEmpty() }
             val balance = runBlocking(Dispatchers.IO) { database.balanceChangeDao().getByFundSource(sourceId).first().single().newBalance }
             assertEquals(expectedBalance, balance, 0.0)
         } finally {

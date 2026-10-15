@@ -18,8 +18,8 @@ class FundSourcesViewModel(
     private val host = FundSourcesHost(repository, settings, viewModelScope, dispatchers)
     val uiState: StateFlow<FundSourcesUiState> = host.uiState
 
-    fun addFundSource(name: String) {
-        host.addFundSource(name)
+    fun addFundSource(name: String, currency: String = "CNY") {
+        host.addFundSource(name, currency)
     }
 
     fun updateFundSource(fundSource: FundSource) {

@@ -9,7 +9,7 @@ import android.net.Uri
 import java.io.ByteArrayOutputStream
 
 /** Bounds decoding prevents full-resolution allocations before resizing and encoding. */
-class BalanceImageEncoder(private val context: Context) {
+class RecognitionImageEncoder(private val context: Context) {
     fun encode(uri: Uri): ByteArray {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         val boundsStream = context.contentResolver.openInputStream(uri)

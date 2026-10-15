@@ -14,10 +14,13 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
+import org.json.JSONObject
 
 class LlmdServiceConnection(context: Context) {
     private val appContext = context.applicationContext
@@ -67,9 +70,44 @@ class LlmdServiceConnection(context: Context) {
         }
     }
 
+    suspend fun models(target: LlmdTarget): String = requestIpc(target) { callback ->
+        requireService(target).listModelsAsync(callback)
+    }
+
     suspend fun chatCompletion(target: LlmdTarget, requestJson: String): String {
+        awaitEngineReady(target)
         return requestIpc(target) { callback ->
             requireService(target).chatCompletionAsync(requestJson, callback)
+        }
+    }
+
+    suspend fun activeModel(target: LlmdTarget): String {
+        val response = awaitEngineReady(target)
+        if (response.isNull("activeModel") || response.optString("activeModel").isBlank()) {
+            throw LlmdRecognitionException("Select and start a model in LLMD; no active model was reported")
+        }
+        return response.getString("activeModel")
+    }
+
+    private suspend fun awaitEngineReady(target: LlmdTarget): JSONObject =
+        withTimeoutOrNull(REQUEST_TIMEOUT_MILLIS) { pollEngineReady(target) }
+            ?: throw LlmdRecognitionException("LLMD engine initialization timed out; check model status in LLMD and try again")
+
+    private suspend fun pollEngineReady(target: LlmdTarget): JSONObject {
+        while (true) {
+            val response = JSONObject(health(target))
+            response.optJSONObject("error")?.let { error ->
+                if (error.optString("type") == "authorization_required") throw LlmdAuthorizationException()
+                throw llmdRecognitionError(error.optString("type"), error.optString("message"))
+            }
+            if (response.has("serviceEnabled") && !response.getBoolean("serviceEnabled") && response.optString("engineState") != "error") {
+                throw LlmdRecognitionException("LLMD service is off; open LLMD, choose a model and switch the service on")
+            }
+            if (!response.has("engineReady") || response.getBoolean("engineReady")) return response
+            if (response.optString("engineState") == "error") {
+                throw llmdRecognitionError("llmd_error", response.optString("engineError"))
+            }
+            delay(500)
         }
     }
 
@@ -127,7 +165,9 @@ class LlmdServiceConnection(context: Context) {
         pendingBinding = binding
         val intent = Intent(ACTION_BIND_IPC)
             .setComponent(ComponentName(target.packageName, LlmdTarget.SERVICE_CLASS_NAME))
-        if (appContext.bindService(intent, connection, Context.BIND_AUTO_CREATE)) {
+        // Inference is part of the foreground caller's work; ordinary bindings only grant
+        // visible-process priority, which some OEM memory managers reclaim during inference.
+        if (appContext.bindService(intent, connection, Context.BIND_AUTO_CREATE or Context.BIND_IMPORTANT)) {
             bound = true
             boundTarget = target
         } else {

@@ -40,13 +40,13 @@ class FundSourcesHost(
             initialValue = FundSourcesUiState.Loading,
         )
 
-    fun addFundSource(name: String) {
-        launchIo { repository.insertFundSource(FundSource(name = name)) }
+    fun addFundSource(name: String, currency: String = "CNY") {
+        launchIo { repository.insertFundSource(FundSource(name = name.trim(), currency = requireNotNull(com.storytellerf.summer.data.currencyCode(currency)))) }
     }
 
     fun updateFundSource(fundSource: FundSource) {
         launchIo {
-            repository.updateFundSource(fundSource.copy(updatedAt = currentTimeMillis()))
+            repository.updateFundSource(fundSource.copy(currency = requireNotNull(com.storytellerf.summer.data.currencyCode(fundSource.currency)), updatedAt = currentTimeMillis()))
         }
     }
 
