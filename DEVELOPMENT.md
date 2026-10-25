@@ -21,6 +21,46 @@ throughout UI tests: a sleeping/locked screen prevents Compose lifecycle collect
 running. Restore any temporary keep-awake setting after testing. Device suites install the
 separate Debug application and reset its test database; use a device without valuable Debug data.
 
+## Release build deprecation checks
+
+The Release workflow prints individual Gradle warnings for both `assembleAlpha` (branches)
+and `assembleRelease` (tags). To reproduce both build paths locally:
+
+```sh
+./gradlew assembleAlpha assembleRelease --warning-mode all --stacktrace
+./gradlew assembleAlpha assembleRelease --warning-mode all
+```
+
+The first run must configure the project to diagnose plugin calls; if a configuration
+cache entry already exists, use `--no-configuration-cache` for a diagnostic run, then
+run the commands above again to check cache storage and reuse. `--stacktrace` includes
+the callers of deprecated APIs. Do not suppress warnings or disable the configuration
+cache in the release workflow to hide plugin problems.
+
+For [issue #23](https://github.com/storytellerF/summer/issues/23), Gradle 9.8.1 with
+AGP 9.1.1 reproduced `dependency_project_notation` at
+`VariantDependenciesBuilder.build`: AGP passed a `Project` as a dependency notation,
+which becomes an error in Gradle 10. Upgrading AGP to 9.4.1 removed this warning;
+upstream main already includes that upgrade. The PR retains upstream's AGP 9.4.1
+and Gradle 9.8.2 rather than repeating or reverting dependency updates.
+No project-script deprecation calls were found in these builds.
+
+Remaining `Configuration.setVisible(boolean)` warnings target **Gradle 11**, not 10:
+
+| Owner/version | Callers in the diagnostic stack | Follow-up |
+| --- | --- | --- |
+| AGP 9.4.1 | `BasePlugin` (JDK image, lint and Android test configurations), `SourceSetManager.createConfiguration`, `TaskManager.createCoreLibraryDesugaringConfig`, `VariantDependenciesBuilder.build`, `BaseJavaPreCompileTaskCreationConfig.createKaptOrKspClassPath`, `UtpTestUtilsKt.maybeCreateUtpConfigurations` | Recheck when upgrading AGP; these calls remain in 9.4.1. |
+| KSP 2.3.12 | `KspConfigurations` constructor and `createConfiguration`, `KspSubpluginKt.markResolvable` | [KSP #3234](https://github.com/google/ksp/issues/3234), fixed by [#3237](https://github.com/google/ksp/pull/3237); the fix is merged but was not released in 2.3.12. Upgrade once a release includes it. |
+
+Both Alpha (with shrinking) and Release APK assembly passed with AGP 9.4.1, and the
+repeat build reused the configuration cache. Verification on upstream's Gradle 9.8.2
+also passed both builds and all 68 `testDebugUnitTest` tests; `lintDebug` completed
+with 0 errors and 13 warnings. APK ZIP integrity checks passed,
+including the manifest and DEX entries. Local verification produces unsigned
+APKs when release signing variables are absent; it does not validate the production
+keystore or publish a release. Keep checking the APK outputs and cache behavior as
+well as the warning text when updating plugins.
+
 The standard instrumented suite exercises finance, recognition settings, and the Koog
 image-to-form-to-database path with a mock HTTP transport. The live
 OpenRouter test skips unless explicitly provisioned by the runner below.
