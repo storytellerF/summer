@@ -1,93 +1,39 @@
 # Summer
 
-An Android app for recording fund-source balance snapshots and importing real transactions from screenshots. Image import can use an installed LLMD app or an image-capable API model through Koog.
+Summer 是一款 Android 应用，用于记录资金来源的余额快照，并从截图导入真实交易。图像导入可使用已安装的 LLMD 应用，也可通过 Koog 调用支持图像的 API 模型。
 
-The home timeline loads balance snapshots and imported transactions as you scroll. Each
-snapshot shows the total assets and account balances at that moment. Transactions retain
-their recognized amounts. Orders between two balance records for the same account explain
-that balance change; any remaining amount appears as a **Balance difference**.
-For example, a balance drop of 100 with orders totaling −70 shows those orders and a −30
-difference. Fully explained changes have no difference row. Later imports update the
-remaining difference automatically.
+主页时间线随滚动加载余额快照和导入的交易。每份快照显示当时的资产总额和各账户余额。交易保留识别得到的金额。同一账户两次余额记录之间的订单用于解释余额变化；未被解释的部分显示为 **Balance difference**。例如，余额减少 100、订单合计为 −70 时，会显示这些订单和 −30 的差额。变化全部被解释时，不显示差额行。后续导入会自动更新剩余差额。
 
-Tap **Import orders** in the home toolbar, choose an account, then **Choose Screenshot**.
-Review the compact list and tap a transaction to edit its date, signed amount in the account currency, description
-and original transaction ID.
-Uncheck rows you do not want and tap **Import selected transactions**. Screenshot recognition
-uses the same provider settings as balance recognition. Use screenshots with clear income/expense direction.
-Order dates come from the transaction text in the screenshot, independently of the image's
-creation time. Incomplete or relative dates are left blank for you to fill before importing; ambiguous
-amounts, pending transactions and rows explicitly in a different account currency are skipped.
+点击主页工具栏的 **Import orders**，选择账户，再点击 **Choose Screenshot**。检查紧凑的交易列表，点击交易可编辑日期、以账户货币计价的正负金额、说明和原始交易 ID。取消勾选不需要的行，再点击 **Import selected transactions**。截图识别与余额识别使用相同的提供方设置。请使用收支方向清楚的截图。订单日期来自截图中的交易文字，与图片创建时间无关。不完整或相对日期会留空，必须在导入前补齐；金额含糊、待处理交易和明确使用不同账户货币的行会被跳过。
 
-Visible transaction/order/reference IDs are used to avoid importing the same transaction twice
-for an account, including from different screenshots. When an ID is not visible, the preview
-says so: only repeated imports of the same screenshot rows can be detected. Cropped or overlapping
-screenshots without IDs may contain duplicates; uncheck them before importing. Dates are interpreted
-in the device's local time zone. Successfully recognized screenshots are saved as compressed JPEGs
-in the app's private storage and linked to the saved balance or transaction records.
-Transactions from the same screenshot share one image file. Importing transactions does not change recorded balance snapshots.
+可见的交易、订单或参考 ID 用于避免同一账户重复导入交易，也能跨截图去重。没有可见 ID 时，预览会明确提示：此时只能检测同一截图行的重复导入。裁剪或重叠且没有 ID 的截图可能包含重复交易，请在导入前取消勾选。日期按设备本地时区解释。成功识别的截图以压缩 JPEG 保存到应用私有存储，并关联到保存的余额或交易记录。同一截图的交易共用一个图片文件。导入交易不会改变已记录的余额快照。
 
-Use **Record balance → Manual** for an account balance, recording time and optional note.
-Edit **Local date and time** before saving. It defaults to the current
-time. Selecting an image uses its original capture/creation metadata when available;
-images without readable creation metadata default to the current time. Check or correct
-the time for historical screenshots before saving.
+通过 **Record balance → Manual** 录入账户余额、记录时间和可选备注。保存前可编辑 **Local date and time**，其默认值为当前时间。选择图片时，如可读取原始拍摄或创建元数据，则使用该时间；无法读取创建元数据的图片默认使用当前时间。保存历史截图前，请检查或修正时间。
 
-Balance records within a total span of **10 minutes** appear in one timeline node when
-repeated readings of the same account have the same balance. A different balance starts a
-new node; orders can appear within the time span without splitting it. Original readings
-and their image links remain saved independently.
+余额记录的整体时间跨度在 **10 分钟**以内，且同一账户的重复读数余额相同时，会显示为同一个时间线节点。余额变化会开始新节点；时间跨度内的订单不会拆分节点。原始读数及其图片链接仍独立保存。
 
-Use **Record balance → Screenshots**, select the accounts and specify the balance label to
-read for each account (for example, available cash or savings balance). Use **Choose images**
-to select one or several pictures; a picture can contain multiple account balances.
-Review all results together. Tap a balance to assign its account or edit its amount/time/note,
-and uncheck unwanted rows before **Save selected balances**. Both import flows offer bulk
-selection and confirm before discarding a preview to choose other images.
-Each picture supplies its own creation time and compressed image link. Completed results
-remain available if another picture fails; saving selected results is atomic.
+通过 **Record balance → Screenshots** 选择账户，并为每个账户指定要读取的余额标签，例如可用现金或储蓄余额。使用 **Choose images** 选择一张或多张图片；一张图片可以包含多个账户余额。统一检查全部结果，点击余额可分配账户或编辑金额、时间和备注；取消勾选不需要的行，再点击 **Save selected balances**。两种导入流程都支持批量选择，放弃当前预览并选择其他图片前会要求确认。每张图片提供自己的创建时间和压缩图片链接。另一张图片失败时，已完成的结果仍可查看；所选结果以原子方式保存。
 
-Manage fund sources under **Settings → Accounts**.
+通过 **Settings → Accounts** 管理资金来源。
 
-Open **Settings → Image recognition** to choose **LLMD**, **OpenAI**, **Anthropic (Claude)**,
-**OpenRouter**, or an **OpenAI-compatible** API provider. LLMD is selected by default.
+打开 **Settings → Image recognition**，可选择 **LLMD**、**OpenAI**、**Anthropic (Claude)**、**OpenRouter** 或 **OpenAI-compatible** API 提供方。默认选择 LLMD。
 
-For an API provider, enter its HTTPS **API base URL** (including the version path, such as
-`https://openrouter.ai/api/v1`), a **model ID** supporting images and JSON Schema, and your **API key**, then tap
-**Save recognition settings**. OpenAI connections can use Responses API or Chat Completions.
-API providers require native JSON Schema output; unsupported API models fail without a plain-text fallback.
-LLMD uses JSON-only prompting with strict validation in the app, because the installed Gemma model
-omits readable values in LiteRT-LM's guided generation mode. Malformed or incomplete results are rejected.
-This version supports API keys; account/subscription login is not included.
+使用 API 提供方时，输入 HTTPS **API base URL**（包含版本路径，例如 `https://openrouter.ai/api/v1`）、支持图像和 JSON Schema 的 **model ID** 及 **API key**，再点击 **Save recognition settings**。OpenAI 连接可使用 Responses API 或 Chat Completions。API 提供方必须支持原生 JSON Schema 输出；模型不支持时会失败，不回退到纯文本。由于已安装的 Gemma 模型在 LiteRT-LM 引导生成模式下会省略可读取的值，LLMD 使用仅输出 JSON 的提示词，并由应用严格验证。格式错误或不完整的结果会被拒绝。本版本支持 API key，不包含账户或订阅登录。
 
-Each provider keeps its own saved connection. API keys are encrypted on the device and excluded
-from backups. **Remove saved connection** erases a provider's connection and returns to LLMD if
-that provider was active. Imported images are uploaded to the selected remote provider when
-an API connection is active. Review recognized amounts and transaction identifiers before saving.
+每个提供方独立保存连接。API key 在设备上加密，并排除在备份之外。**Remove saved connection** 会删除对应提供方的连接；如果它当前处于启用状态，则切回 LLMD。启用 API 连接时，导入图片会上传到所选远程提供方。保存前请检查识别金额和交易标识。
 
-OpenRouter's `qwen/qwen3.8-27b:free` is a starting model for testing. Availability, image
-support, free quotas, and account permissions can change; check the provider's current catalog.
+可从 OpenRouter 的 `qwen/qwen3.8-27b:free` 开始测试。可用性、图像支持、免费额度和账户权限可能变化，请查看提供方当前的模型目录。
 
-For LLMD, choose the installed package in **LLMD build**:
+使用 LLMD 时，在 **LLMD build** 中选择已安装的包：
 
-- Release: `com.storytellerf.llmd`
-- Alpha: `com.storytellerf.llmd.alpha`
-- Debug: `com.storytellerf.llmd.debug`
+- Release：`com.storytellerf.llmd`
+- Alpha：`com.storytellerf.llmd.alpha`
+- Debug：`com.storytellerf.llmd.debug`
 
-Each fund source has an ISO currency code, editable in Settings → Accounts (default CNY for existing accounts). Recognition follows the selected account currencies without conversion. Timeline totals are shown separately for each currency.
+每个资金来源都有 ISO 货币代码，可在 Settings → Accounts 编辑，已有账户默认为 CNY。识别遵循所选账户货币，不进行换算。时间线按币种分别显示总额。
 
-The choice is saved on device. Debug builds default to LLMD Debug; non-debug builds default to
-LLMD Release until a different package is selected.
-In LLMD, choose an imported model and switch its model service on. Wait for Ready before
-recognizing an image. Summer uses that service's active model; it never chooses a default
-model or falls back to another one. If the service is Off, open LLMD to enable it.
-Settings → Image recognition shows Release, Alpha and Debug separately: installation,
-authorization for this Summer app, service state, running model and imported models.
-Use each build's Authorize/Open buttons as needed. Status refreshes while the page is
-visible and after returning from LLMD. Older LLMD builds that load models during status
-queries show an update notice and unknown authorization/model information instead.
+选择会保存在设备上。Debug 构建默认使用 LLMD Debug，非 debug 构建默认使用 LLMD Release，直到另行选择。请在 LLMD 中选择已导入模型并开启模型服务，等待 Ready 后再识别图片。Summer 使用该服务的当前活动模型，绝不会选择默认模型或回退到其他模型。服务为 Off 时，请打开 LLMD 启用。Settings → Image recognition 分别显示 Release、Alpha 和 Debug 的安装状态、当前 Summer 应用的授权、服务状态、运行中的模型及已导入模型。按需使用各构建的 Authorize/Open 按钮。页面可见时及从 LLMD 返回后会刷新状态。旧版 LLMD 如果会在状态查询期间加载模型，则显示更新提示，将授权和模型信息标为未知。
 
-Debug, alpha and release builds can be installed together. Each keeps its own balances,
-transactions, saved images and recognition settings.
+Debug、alpha 和 release 构建可同时安装，各自独立保存余额、交易、图片和识别设置。
 
-See [DEVELOPMENT.md](DEVELOPMENT.md) for build instructions and the optional OpenRouter vision test.
+构建说明及可选的 OpenRouter 图像测试见 [DEVELOPMENT.md](DEVELOPMENT.md)。
