@@ -1,5 +1,3 @@
-<a id="development"></a>
-
 # 开发指南
 
 使用 JDK 17、Android SDK platform 37，以及 Android 模拟器或 USB 连接的实体设备。Gradle Wrapper 会下载所需 Gradle 版本。
@@ -15,8 +13,6 @@ Ktor 3.6 使用 OkHttp 5.5，其 Android 构件要求 compileSdk 37。Ktor BOM �
 ```
 
 Windows 使用 `gradlew.bat`。为 Gradle 选择设备时设置 `ANDROID_SERIAL`，并将相同 serial 传给 Python 执行器。整个 UI 测试期间保持实体设备解锁且唤醒：休眠或锁屏会阻止 Compose 生命周期收集器运行。测试后恢复临时保持唤醒设置。设备套件安装独立 Debug 应用，并重置其测试数据库；使用没有重要 Debug 数据的设备。
-
-<a id="release-build-deprecation-checks"></a>
 
 ## Release 构建弃用检查
 
@@ -41,8 +37,6 @@ Release 工作流会分别输出 `assembleAlpha`（分支）和 `assembleRelease
 AGP 9.4.1 下，Alpha（启用缩减）和 Release APK 组装均通过，重复构建复用了配置缓存。在上游 Gradle 9.8.2 上也通过两种构建及全部 68 个 `testDebugUnitTest` 测试；`lintDebug` 完成，结果为 0 个错误和 13 个警告。APK ZIP 完整性检查通过，包括 manifest 和 DEX 条目。缺少 release 签名变量时，本地验证生成未签名 APK，不验证生产密钥库，也不发布版本。更新插件时，除了警告文字，还要持续检查 APK 输出和缓存行为。
 
 标准 instrumentation 套件使用模拟 HTTP 传输层，覆盖财务、识别设置及 Koog 从图像到表单再到数据库的路径。真实 OpenRouter 测试只有通过下方执行器显式准备后才会运行，否则跳过。
-
-<a id="openrouter-vision-test"></a>
 
 ## OpenRouter 图像测试
 
@@ -76,15 +70,11 @@ python3 scripts/test-openrouter.py --serial emulator-5554 \
 
 两个 Python 执行器会自动使用 Windows Gradle Wrapper。两个 Debug APK 都已构建时，可使用 `--skip-build`。测试账户默认使用 CNY；通过 `--currency` 指定截图账户货币，例如 Cashew 用 USD，Monzo 用 GBP。模型必须当前支持图像和原生 JSON Schema；有免费模型并不意味着支持 schema。截图通过 ADB stdin 以 base64 传输，并在设备上核验 SHA-256，避免 Windows 二进制 stdin 损坏。凭据不会进入命令参数或日志。设备没有互联网时，可通过 `adb -s SERIAL reverse tcp:PORT tcp:PORT` 转发外部 HTTP CONNECT 代理，再向任一执行器传入 `--proxy-port PORT`。这只改变 instrumentation 测试传输层，保留正常 TLS 和证书验证；测试后必须移除 ADB reverse 映射并停止代理。
 
-<a id="recognition-architecture"></a>
-
 ## 识别架构
 
 `ConfiguredImageAnalyzer` 为每个请求保存识别设置快照，再分派给 LLMD 适配层或 `KoogImageRecognizer`。现有 LLMD 目标流仍决定哪个已安装包接收 IPC 和授权请求。两条路径共用 `RecognitionImageEncoder`，限制图片解码规模，缩放到 1600 像素，并将 JPEG 负载限制为 500 KB。Koog 在 Android 上显式使用 Ktor OkHttp 传输层；每个请求后关闭客户端和传输层，并传播取消。现在只保留多余额和交易识别接口；旧的单值余额接口及零值回退已移除。两个后端共用英文提示词和结构 schema。Koog 通过 `LLMParams.Schema.JSON.Standard` 发送原生 JSON Schema：Chat Completions 使用严格的 `response_format`，Responses 使用 `text.format`，Claude 使用 `output_config.format`。OpenRouter 路由要求支持相应参数。Schema 不受支持时直接失败，不用文本重试。由于 Claude 不支持 schema 的 `maxItems`，数组行数上限仍由解析器检查。
 
 `RecognitionSettingsHost` 独立于 Compose 管理设置状态和操作，在注入的串行调度器上协调，在 IO 上持久化。余额录入 Host 也在此调度器上协调状态，而识别在 IO 执行。API key 使用 Android Keystore 密钥进行 AES-GCM 加密。Preferences 保存在 `noBackupFilesDir`，API 请求、响应正文和凭据绝不写入应用日志。
-
-<a id="entry-and-review-ui"></a>
 
 ## 录入与审核 UI
 
@@ -93,8 +83,6 @@ python3 scripts/test-openrouter.py --serial emulator-5554 \
 两种截图导入都使用选择和审核步骤、紧凑的可选择行、批量选择，以及 `ui/components` 提供的底部弹层详情编辑器。行编辑更新 Host 草稿；关闭详情弹层不会保存数据库。保存时验证并持久化所选记录。余额重新分配账户时，只能选择预选目标。订单预览的账户保持固定，直到用户确认放弃该预览。放弃时清除待识别引用和草稿图片元数据，不删除已保存数据。
 
 设置将 Accounts 与 Image recognition 分开。只有 LLMD 显示构建选择器；API 提供方显示各自连接字段。生产 UI 使用已有 Material 3 主题。Compose 状态和 Paging 收集器显式使用 `Dispatchers.Main.immediate`；Host 协调、识别和数据库工作仍使用后台调度器。`ImportReviewJourneyTest` 覆盖日期修正、详情、取消选择和持久化；`BalanceScreenshotImportTest` 通过详情编辑器测试含糊的账户分配。向这些设备测试传入 `-e design_screenshots true`，可将合成流程截图保存在 debug 应用的 `cache/design-screenshots/` 供视觉审查。此辅助程序不会捕获用户截图或凭据。
-
-<a id="transaction-import-and-timeline-paging"></a>
 
 ## 交易导入与时间线分页
 
@@ -134,8 +122,6 @@ Compose 时间线在分页行前放置固定 key、不可交互的 0dp sentinel�
 
 单元测试覆盖提供方请求、解析、预览与选择、授权、取消和分页。`TransactionDatabaseTest` 在设备上覆盖 Room 迁移、跨图片 ID 去重、账户删除、区间边界和历史账户余额初始值。
 
-<a id="public-transaction-screenshot-regression"></a>
-
 ## 公开交易截图回归
 
 下载的截图和人工核查的预期 JSON 应保留在仓库之外。标准套件跳过 `TransactionScreenshotImportTest`，除非执行器提供图片和预期行。例如，[支付宝官方帮助页](https://cschannel.alipay.com/mobile/helpDetail.htm?help_id=201602058759)包含一张[交易详情截图](https://tfsimg.alipay.com/images/cspropmng/TB1Qx0_X7RDDuNkUvNm760SypXa)，显示 `-20.70`、`2018-11-05 10:59` 和遮盖的 ID。其预期 JSON 为：
@@ -166,8 +152,6 @@ LLMD 识别在发送图片前保持 Binder 连接并轮询引擎健康。异步�
 生产 coroutine core/Android 和协程测试构件共用版本目录中的版本，应保持对齐：instrumentation 在应用 APK 的协程运行时上执行，只升级测试构件可能导致测试开始前缺少方法。
 
 页面副作用处理函数将导航、授权启动和通知分派到 Android 主调度器；Host 协调继续在注入的串行工作调度器上执行。
-
-<a id="llmd-integration-verification"></a>
 
 ## LLMD 集成验证
 
